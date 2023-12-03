@@ -1,0 +1,381 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+```
+
+
+```{r}
+library(dplyr)
+library(Seurat)
+library(patchwork)    
+iECM1.data <- Read10X(data.dir = "/Users/joshmesfin/Documents/MATLAB/iECM1/filtered_feature_bc_matrix")
+iECM2.data <- Read10X(data.dir = "/Users/joshmesfin/Documents/MATLAB/iECM2/filtered_feature_bc_matrix")
+Sal1.data <- Read10X(data.dir = "/Users/joshmesfin/Documents/MATLAB/Sal1/filtered_feature_bc_matrix")
+Sal2.data <- Read10X(data.dir = "/Users/joshmesfin/Documents/MATLAB/Sal2/filtered_feature_bc_matrix")
+toex <- c('Hb-','^Rpl', '^Mt-', '^Rps', '^Hba-','^Hbb-')
+Sal1.index <- grep(paste(toex,collapse = '|'),x = rownames(Sal1.data),value = F)
+Sal1.data<- Sal1.data[-Sal1.index, ]
+Sal2.index <- grep(paste(toex,collapse = '|'),x = rownames(Sal2.data),value = F)
+Sal2.data<- Sal2.data[-Sal2.index, ]
+# Initialize the Seurat object with the raw (non-normalized data).
+Sal1 <- CreateSeuratObject(counts = Sal1.data, project = "Saline", min.cells = 3, min.features = 200)
+Sal2 <- CreateSeuratObject(counts = Sal2.data, project = "Saline", min.cells = 3, min.features = 200)
+Day3Saline <- merge(Sal1,
+                  y = Sal2, 
+                  add.cell.ids = c("1", "2"))
+
+iECM1.index <- grep(paste(toex,collapse = '|'),x = rownames(iECM1.data),value = F)
+iECM1.data<- iECM1.data[-iECM1.index, ]
+iECM2.index <- grep(paste(toex,collapse = '|'),x = rownames(iECM2.data),value = F)
+iECM2.data<- iECM2.data[-iECM2.index, ]
+# Initialize the Seurat object with the raw (non-normalized data).
+iECM2 <- CreateSeuratObject(counts = iECM2.data, project = "Matrix", min.cells = 3, min.features = 200)
+
+iECM1 <- CreateSeuratObject(counts = iECM1.data, project = "Matrix", min.cells = 3, min.features = 200)
+Day3Matrix <-merge(iECM2,
+                  y = iECM1,
+                  add.cell.ids = c("2", "1"))
+
+D3<- merge(Day3Matrix,
+                  y = Day3Saline)
+
+D3.list <- SplitObject(D3)
+
+D3.list <- lapply(X = D3.list, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+features <- SelectIntegrationFeatures(object.list = D3.list)
+
+Day3.anchors <- FindIntegrationAnchors(object.list = D3.list, anchor.features = features)
+Day3 <- IntegrateData(anchorset = Day3.anchors)
+```
+
+```{r}
+all.genes <- rownames(Day3)
+Day3 <- ScaleData(Day3, features = all.genes)
+
+```
+```{r}
+Day3 <- RunPCA(Day3, features = VariableFeatures(object = Day3))
+print(Day3[["pca"]], dims = 1:5, nfeatures = 5)
+```
+
+```{r}
+VizDimLoadings(Day3, dims = 1:2, reduction = "pca")
+DimPlot(Day3, reduction = "pca")
+```
+
+
+```{r}
+Day3 <- RunUMAP(Day3, dims = 1:40)
+DimPlot(Day3, reduction = "umap", dims = c(1,2), split.by = 'orig.ident', raster = FALSE, label = TRUE)
+VlnPlot(Day3, features = c("Srr", "Myl2", "Fhl2"), assay = 'RNA', pt.size = 0)
+```
+
+```{r}
+Day3 <- FindNeighbors(Day3, dims = 1:40)
+Day3 <- FindClusters(Day3, resolution = 2)
+```
+
+```{r}
+head(Idents(D3), 5)
+Day3 <- RunUMAP(Day3, dims = 1:40)
+
+```
+
+
+```{r}
+#name cell types
+new.cluster.idsDay3 <- c('IC 1', 'IC 2', 'EC 1', 'Fibs 1', 'Fibs 2', 'Fibs 3', 'IC 3', 'Fibs 4', 'SMC 1', 'EC 2', 'CM 1', 'IC 4', 'CM 2', 'Fibs 5', 'IC 5', 'Fibs 6', 'CM 3', 'IC 6', 'IC 7', 'IC 8', 'CM 4', 'IC 9', 'Fibs 7', 'EC 3', 'EC 4', 'SMC 2', 'EC 5', 'Neuronal Cells', 'Endocardial Cells', 'IC 10', 'Lymphatic ECs', 'SMC 3', 'IC 11')
+names(new.cluster.idsDay3) <- levels(Day3)
+Day3 <- RenameIdents(Day3, new.cluster.idsDay3)
+levels(Day3) <- c('CM 1', 'CM 2', 'CM 3', 'CM 4', 'EC 1', 'EC 2', 'EC 3', 'EC 4', 'EC 5', 'Lymphatic ECs', 'SMC 1', 'SMC 2', 'SMC 3', 'IC 1', 'IC 2', 'IC 3', 'IC 4', 'IC 5', 'IC 6', 'IC 7', 'IC 8', 'IC 9', 'IC 10', 'IC 11', 'Fibs 1', 'Fibs 2', 'Fibs 3', 'Fibs 4', 'Fibs 5','Fibs 6', 'Fibs 7', 'Neuronal Cells', 'Endocardial Cells')
+```
+
+
+```{r}
+
+my_cols1 <- c('Fibs 1'='blue4','Fibs 2'='blue4', 'Fibs 3'='blue4', 'Fibs 4'='blue4', 'Fibs 5'='blue4', 'Fibs 6'='blue4', 'Fibs 7'='blue4','EC 1'='darkorchid4','EC 2'='darkorchid4','EC 3'='darkorchid4','EC 4'='darkorchid4', 'EC 5'='darkorchid4',
+  'IC 1'='darkolivegreen', 'IC 2'='darkolivegreen', 'IC 3' = 'darkolivegreen', 'IC 4' = 'darkolivegreen', 'IC 5'= 'darkolivegreen', 'IC 6'='darkolivegreen', 'IC 7' = 'darkolivegreen', 'IC 8' = 'darkolivegreen', 'IC 9' = 'darkolivegreen', 'IC 10' = 'darkolivegreen', 'IC 11' = 'darkolivegreen', 'CM 1'='firebrick4','CM 2'='firebrick4', 'CM 3'='firebrick4', 'CM 4'='firebrick4', 'Neuronal Cells' = 'gray22', 'SMC 1' = 'goldenrod2', 'SMC 2' = 'goldenrod2', 'SMC 3' = 'goldenrod2', 
+  'Lymphatic ECs' =  'turquoise4', 'Endocardial Cells' = 'lightsalmon')
+DimPlot(Day3, reduction = "umap", dims = c(1,2), cols= my_cols1, split.by = 'orig.ident', raster = FALSE) + plot_annotation('Integrated Day 3 UMAP') +  ggplot2::theme(legend.position = "none")
+```
+
+```{r fig.width = 8, fig.height = 10}
+
+# find markers for every cluster compared to all remaining cells, report only the positive
+# ones
+Day3.markers <- FindAllMarkers(Day3, only.pos = TRUE, min.diff.pct = 0.25, min.pct = 0.25)
+Day3.markers %>%
+  group_by(cluster) %>%
+    top_n(n = 5, wt = avg_log2FC) -> top10
+top10
+DoHeatmap(Day3,  features = top10$gene)
+
+```
+
+
+
+```{r}
+
+#create Volcano Plot
+EnhancedVolcano(CMD3.markers,
+    lab = rownames(CMD3.markers),
+    x = 'avg_log2FC',
+    y = 'p_val_adj',
+    FCcutoff = 0.25,
+    pointSize = 3.0,
+    pCutoff = 0.05,
+    gridlines.major = FALSE,
+    gridlines.minor = FALSE,
+    selectLab = c(''),
+    title = 'Day 3 Matrix vs. Saline')
+```
+
+# afterwards, similar analysis is done per cell type where subsetting occurs, then redo PCA, UMAP, and clustering
+
+```{r}
+DefaultAssay(Day3) <- "integrated"
+TcellD3 <- subset(Day3, idents = c('IC 8'))
+
+TcellD3 <- FindVariableFeatures(TcellD3, selection.method = "vst", nfeatures = 4000) #FindVariableGenes
+
+all.genes <- rownames(TcellD3)
+TcellD3 <- ScaleData(TcellD3, features = all.genes)
+
+#Dimensional Reduction
+
+TcellD3 <- RunPCA(TcellD3, features = VariableFeatures(object = TcellD3))
+TcellD3 <- RunUMAP(TcellD3, dims = 1:40)
+DimPlot(TcellD3, reduction = "umap", dims = c(1,2))
+DimPlot(TcellD3, reduction = "umap", dims = c(1,2), split.by = 'orig.ident', label = TRUE)
+TcellD3 <- FindNeighbors(TcellD3, dims = 1:40)
+TcellD3 <- FindClusters(TcellD3, resolution = 1) 
+TcellD3 <- RunUMAP(TcellD3, dims = 1:40)
+tiff('AcuteTcellUMAP.tiff', width = 3000, height = 1500,res = 300)
+DimPlot(TcellD3, reduction = "umap", dims = c(1,2),split.by = 'orig.ident', cols = c('3' = '#ee220c', '0' = '#00AB8E'))
+dev.off()
+VlnPlot(Day3, features = c('Cd163', 'Icam1'), pt.size = 0, split.by = 'orig.ident', assay = 'RNA')
+
+DefaultAssay(Day3) <- "RNA"
+TcellD3.markers <- FindMarkers(TcellD3, ident.1 = c('3'), ident.2 = c('0'),min.diff.pct = 0.25, logfc.threshold = 0.25)
+TcellD3.markers %>%
+  arrange(-avg_log2FC) ->top10IC
+    top_n(n = 5, wt = avg_log2FC) -> top10IC
+
+write.csv(TcellD3.markers,'TcellD3.csv')
+DoHeatmap(TcellD3,features = top10IC$gene)
+```
+
+```{r}
+DefaultAssay(Day3) <- "integrated"
+ICD3 <- subset(Day3, idents = c('IC 6'))
+
+ICD3 <- FindVariableFeatures(ICD3, selection.method = "vst", nfeatures = 4000) #FindVariableGenes
+
+all.genes <- rownames(ICD3)
+ICD3 <- ScaleData(ICD3, features = all.genes)
+
+#Dimensional Reduction
+
+ICD3 <- RunPCA(ICD3, features = VariableFeatures(object = ICD3))
+ICD3 <- RunUMAP(ICD3, dims = 1:40)
+DimPlot(ICD3, reduction = "umap", dims = c(1,2))
+DimPlot(ICD3, reduction = "umap", dims = c(1,2), split.by = 'orig.ident', label = TRUE)
+ICD3 <- FindNeighbors(ICD3, dims = 1:40)
+ICD3 <- FindClusters(ICD3, resolution = 1) 
+ICD3 <- RunUMAP(ICD3, dims = 1:40)
+tiff("AcuteMacrophageUMAP.tiff", width = 3000, height = 1500,res = 300)
+DimPlot(ICD3, reduction = "umap", dims = c(1,2),split.by = 'orig.ident', cols = c('2' = '#ee220c','1' = '#ee220c', '5' = '#ee220c', '0' = '#00AB8E'))
+dev.off()
+VlnPlot(ICD3, features = c('Cd163', 'Ptprc'), pt.size = 0, split.by = 'orig.ident', assay = 'RNA')
+
+```
+
+```{r}
+ICD3.markers <- FindAllMarkers(ICD3,only.pos = TRUE, min.diff.pct = 0.25, logfc.threshold = 0.25)
+
+ICD3.markers <- FindMarkers(ICD3, ident.1 = c('1'), ident.2 = c('0'), min.diff.pct = 0.25, logfc.threshold = 0.25)
+
+
+ICD3.markers %>%
+ arrange(-avg_log2FC) -> top10IC
+
+write.csv(top10IC, "AcuteMacrophageDEGs.csv")
+    top_n(n =10, wt = avg_log2FC) -> top10IC
+DoHeatmap(ICD3,features = top10IC$gene)
+```
+
+```{r}
+DefaultAssay(Day3) <- "integrated"
+ECD3 <- subset(Day3, idents = c('EC 1', 'EC 2', 'EC 3', 'EC 4', 'EC 5'))
+
+ECD3 <- FindVariableFeatures(ECD3, selection.method = "vst", nfeatures = 4000) #FindVariableGenes
+
+all.genes <- rownames(ECD3)
+ECD3 <- ScaleData(ECD3, features = all.genes)
+
+#Dimensional Reduction
+
+ECD3 <- RunPCA(ECD3, features = VariableFeatures(object = ECD3))
+ECD3 <- RunUMAP(ECD3, dims = 1:40)
+DimPlot(ECD3, reduction = "umap", dims = c(1,2), split.by = 'orig.ident', label= TRUE)
+ECD3 <- FindNeighbors(ECD3, dims = 1:40)
+ECD3 <- FindClusters(ECD3, resolution = 1) 
+ECD3 <- RunUMAP(ECD3, dims = 1:40)
+
+tiff("AcuteECUMAP.tiff", width = 3000, height = 1500,res = 300)
+DimPlot(ECD3, reduction = "umap", dims = c(1,2), split.by = 'orig.ident', cols = c('12' = '#ee220c', '9' = '#ee220c', '6' = '#ee220c', '0'= '#00AB8E'))
+dev.off()
+
+VlnPlot(ECD3, features = c('Prom1', 'Cd34', 'Vnn2', 'Nt5e', 'Thy1', 'Eng', 'Spn'), split.by = 'orig.ident',assay = 'RNA', pt.size = 0)
+```
+
+```{r}
+ECD3.markers <- FindAllMarkers(ECD3, only.pos = TRUE, min.diff.pct = 0.25, logfc.threshold = 0.25)
+ECD3.markers %>%
+   group_by(cluster) %>%
+  top_n(n = 10, wt = avg_log2FC) -> top10IC
+
+
+ECD3.markers <- FindMarkers(ECD3, ident.1 =  c('6', '9', '12'), ident.2 = '0', min.diff.pct = 0.25, logfc.threshold = 0.25)
+ECD3.markers %>%
+  arrange(-avg_log2FC) ->top10IC
+   group_by(cluster) %>%
+  top_n(n = 10, wt = avg_log2FC) -> top10IC
+
+DoHeatmap(ECD3, features = top10IC$gene, label= FALSE)
+
+
+```
+
+```{r}
+DefaultAssay(Day3) <- 'integrated'
+CMD3 <- subset(Day3, idents = c('CM 1', 'CM 2', 'CM 3', 'CM 4'))
+
+CMD3 <- FindVariableFeatures(CMD3, selection.method = "vst", nfeatures = 4000) #FindVariableGenes
+
+all.genes <- rownames(CMD3)
+CMD3 <- ScaleData(CMD3, features = all.genes)
+
+#Dimensional Reduction
+
+CMD3 <- RunPCA(CMD3, features = VariableFeatures(object = CMD3))
+
+
+CMD3 <- RunUMAP(CMD3, dims = 1:40)
+DimPlot(CMD3, reduction = "umap", dims = c(1,2),  group.by = 'orig.ident')
+DimPlot(CMD3, reduction = "umap", dims = c(1,2))
+CMD3 <- FindNeighbors(CMD3, dims = 1:40)
+CMD3 <- FindClusters(CMD3, resolution = 1) 
+CMD3 <- RunUMAP(CMD3, dims = 1:40)
+tiff("AcuteCMUMAP.tiff", width = 3000, height = 1500,res = 300)
+DimPlot(CMD3, reduction = "umap", dims = c(1,2), split.by = 'orig.ident', cols = c('2'= '#ee220c','3' = '#ee220c','4' = '#ee220c', '14' = '#ee220c', '1'= '#00AB8E','6'= '#00AB8E', '7'= '#00AB8E')) 
+dev.off()
+VlnPlot(CMD3, features = c('Kit', 'Ly6a', 'Tpsab1', 'Lgr6'),, assay = 'RNA', pt.size = 0, split.by = 'orig.ident')
+```
+
+```{r}
+CMD3.markers <- FindMarkers(CMD3,ident.1 = c('2', '3', '4', '14'), ident.2 = c('1', '6', '7'),min.diff.pct = 0.25, logfc.threshold = 0.25)
+CMD3.markers %>%
+    arrange(-avg_log2FC) -> hello
+    top_n(n = 10, wt = avg_log2FC) -> top10CM
+
+```
+
+
+
+```{r}
+DefaultAssay(Day3) <- "integrated" 
+
+
+FibsD3 <- subset(Day3, idents = c('Fibs 1', 'Fibs 2', 'Fibs 3', 'Fibs 4', 'Fibs 5','Fibs 6', 'Fibs 7'))
+FibsD3 <- FindVariableFeatures(FibsD3, selection.method = "vst", nfeatures = 4000) #FindVariableGenes
+
+all.genes <- rownames(FibsD3)
+FibsD3 <- ScaleData(FibsD3, features = all.genes)
+
+#Dimensional Reduction
+
+FibsD3 <- RunPCA(FibsD3, features = VariableFeatures(object = FibsD3))
+FibsD3 <- RunUMAP(FibsD3, dims = 1:40)
+DimPlot(FibsD3, reduction = "umap", dims = c(1,2), split.by = 'orig.ident')
+FibsD3 <- FindNeighbors(FibsD3, dims = 1:40)
+FibsD3 <- FindClusters(FibsD3, resolution = 1) 
+FibsD3 <- RunUMAP(FibsD3, dims = 1:40)
+tiff("AcuteFibUMAP.tiff",width = 3000, height = 1500,res = 300)
+DimPlot(FibsD3, reduction = "umap", dims = c(1,2), split.by = 'orig.ident', cols = c('6' = '#ee220c','12' = '#ee220c','13' = '#ee220c', '3'= '#00AB8E'))
+dev.off()
+VlnPlot(FibsD3, features = c('Col3a1', 'Fap', 'Postn'), assay = 'RNA', split.by = 'orig.ident', pt.size = 0)
+```
+```{r}
+FibsD3.markers <- FindMarkers(FibsD3, ident.1 = c('6', '12', '13'), ident.2 = '3',  min.diff.pct  = 0.25, logfc.threshold = 0.25)
+FibsD3.markers %>%
+    arrange(avg_log2FC)-> top10LEC
+    top_n(n = 10, wt = avg_log2FC) -> top10Fibs
+
+```
+
+```{r}
+
+DefaultAssay(Day3) <- "integrated"
+
+
+LECsD3 <- subset(Day3, idents = c('Lymphatic ECs'))
+LECsD3<- FindVariableFeatures(LECsD3, selection.method = "vst", nfeatures = 4000) #FindVariableGenes
+
+all.genes <- rownames(LECsD3)
+LECsD3 <- ScaleData(LECsD3, features = all.genes)
+
+#Dimensional Reduction
+
+LECsD3 <- RunPCA(LECsD3, features = VariableFeatures(object = LECsD3))
+LECsD3 <- RunUMAP(LECsD3, dims = 1:40)
+DimPlot(LECsD3, reduction = "umap", dims = c(1,2), group.by = 'orig.ident')
+LECsD3 <- FindNeighbors(LECsD3, dims = 1:40)
+LECsD3 <- FindClusters(LECsD3, resolution = 1) 
+LECsD3<- RunUMAP(LECsD3, dims = 1:40)
+tiff("AcuteLymphaticECUMAP.tiff", width = 3000, height = 1500,res = 300)
+DimPlot(LECsD3, reduction = "umap", dims = c(1,2),split.by = 'orig.ident', cols = c('2'= '#ee220c', '3' = '#00AB8E'))
+dev.off()
+
+LECD3.markers <- FindMarkers(LECsD3, ident.1 = '2', ident.2 = '3', min.diff.pct = 0.25, logfc.threshold = 0.25)
+```
+
+```{r}
+
+DefaultAssay(Day3) <- "integrated"
+
+NCD3 <- subset(Day3, idents = c('Neuronal Cells'))
+NCD3<- FindVariableFeatures(NCD3, selection.method = "vst", nfeatures = 4000) #FindVariableGenes
+
+all.genes <- rownames(NCD3)
+NCD3 <- ScaleData(NCD3, features = all.genes)
+
+#Dimensional Reduction
+
+NCD3 <- RunPCA(NCD3, features = VariableFeatures(object = NCD3))
+NCD3 <- RunUMAP(NCD3, dims = 1:40)
+DimPlot(NCD3, reduction = "umap", dims = c(1,2), group.by = 'orig.ident')
+NCD3 <- FindNeighbors(NCD3, dims = 1:40)
+NCD3 <- FindClusters(NCD3, resolution = 1) 
+NCD3<- RunUMAP(NCD3, dims = 1:40)
+tiff("AcuteNeuralCellsUMAP.tiff", width = 3000, height = 1500,res = 300)
+DimPlot(NCD3, reduction = "umap", dims = c(1,2),split.by = 'orig.ident', cols = c('2'= '#ee220c', '1' = '#00AB8E'))
+dev.off()
+
+NCD3.markers <- FindMarkers(NCD3, ident.1 = '2', ident.2 = '1', min.diff.pct = 0.25, logfc.threshold = 0.25)
+```
+
