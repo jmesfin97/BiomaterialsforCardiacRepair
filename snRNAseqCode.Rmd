@@ -1,0 +1,640 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button wi the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(EnhancedVolcano)
+library("scDiffCom")
+CSal1.data <- Read10X(data.dir = "/Users/joshmesfin/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/SCP19Matrix")
+CSal2.data <- Read10X(data.dir = "/Users/joshmesfin/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/SCP25Matrix")
+CMat1.data <- Read10X(data.dir = "/Users/joshmesfin/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/ChronicMatrix1")
+CMat2.data <- Read10X(data.dir = "/Users/joshmesfin/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/ChronicMatrix2")
+toex <- c('HB-','^Rpl', '^MT-', '^R', '^Hba-','^Hbb-')
+
+CSal1.index <- grep(paste(toex,collapse = '|'),x = rownames(CSal1.data),value = F)
+CSal1.data<- CSal1.data[-CSal1.index, ]
+CSal2.index <- grep(paste(toex,collapse = '|'),x = rownames(CSal2.data),value = F)
+CSal2.data<- CSal2.data[-CSal2.index, ]
+
+CSal2 <- CreateSeuratObject(counts = CSal2.data, project = "Subacute", min.cells = 3, min.features = 200)
+CSal2 <- subset(CSal2, subset = nFeature_RNA > 500 & nFeature_RNA < 3500 & nCount_RNA > 1000)
+CSal2 <- subset(CSal2, downsample = 1500)
+CSal1 <- CreateSeuratObject(counts = CSal1.data, project = "Subacute", min.cells = 3, min.features = 200)
+CSal1 <- subset(CSal1, subset = nFeature_RNA > 500 & nFeature_RNA < 3500 & nCount_RNA > 1000)
+CSal1 <- subset(CSal1, downsample = 1500)
+ChronicSaline <-merge(CSal2,
+                  y = CSal1,
+                   add.cell.ids = c("S2", "S1"))
+
+
+CMat1.index <- grep(paste(toex,collapse = '|'),x = rownames(CMat1.data),value = F)
+CMat1.data<- CMat1.data[-CMat1.index, ]
+CMat2.index <- grep(paste(toex,collapse = '|'),x = rownames(CMat2.data),value = F)
+CMat2.data<- CMat2.data[-CMat2.index, ]
+
+CMat2 <- CreateSeuratObject(counts = CMat2.data, project = "Chronic", min.cells = 3, min.features = 200)
+CMat2 <- subset(CMat2, subset = nFeature_RNA > 500 & nFeature_RNA < 3500 & nCount_RNA > 1000)
+CMat1 <- CreateSeuratObject(counts = CMat1.data, project = "Chronic", min.cells = 3, min.features = 200)
+CMat1 <- subset(CMat1, subset = nFeature_RNA > 500 & nFeature_RNA < 3500 & nCount_RNA > 1000)
+CMat1 <- subset(CMat1, downsample = 1500)
+ChronicMatrix <-merge(CMat2,
+                  y = CMat1,
+                   add.cell.ids = c("M2", "M1"))
+
+
+ChrSamples <- merge(ChronicSaline,
+                  y = ChronicMatrix)
+```
+
+```{r}
+ChrSamples.list <- SplitObject(ChrSamples)
+ChrSamples.list <- na.omit(ChrSamples.list) 
+
+ChrSamples.list <- lapply(X = ChrSamples.list, FUN = function(x) {
+    x <- NormalizeData(x)
+    x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+
+features <- SelectIntegrationFeatures(object.list = ChrSamples.list)
+
+ChrSamples.anchors <- FindIntegrationAnchors(object.list = ChrSamples.list, anchor.features = features)
+ChrSamples <- IntegrateData(anchorset = ChrSamples.anchors)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
+
+
+```{r}
+all.genes <- rownames(ChrSamples)
+ChrSamples <- ScaleData(ChrSamples, features = all.genes)
+```
+
+```{r}
+ChrSamples <- RunPCA(ChrSamples, features = VariableFeatures(object = ChrSamples))
+print(ChrSamples[["pca"]], dims = 1:5, nfeatures = 5)
+```
+
+```{r}
+VizDimLoadings(ChrSamples, dims = 1:2, reduction = "pca")
+ChrSamples <- RunUMAP(ChrSamples, dims = 1:40)
+
+ChrSamples <- FindNeighbors(ChrSamples, dims = 1:40)
+ChrSamples <- FindClusters(ChrSamples, resolution = 1)
+```
+
+```{r}
+ChrSamples <- RunUMAP(ChrSamples, dims = 1:40)
+
+DimPlot(ChrSamples, reduction = "umap", dims = c(1,2),label = TRUE, split.by = 'orig.ident') + plot_annotation('Integrated Chronic Day 7 UMAP')
+```
+
+
+```{r}
+ChrSamples.markers <- FindAllMarkers(ChrSamples, only.pos = TRUE, min.diff.pct = 0.25, logfc.threshold = 0.25)
+ChrSamples.markers %>%
+    group_by(cluster) %>% 
+    top_n(n = 10, wt = avg_log2FC) -> top10
+
+new.cluster.ids <- c("Fibs 1", "Fibs 2", "EC 1", "CM 1", "CM 2", "Doublet", "EC 2", "SMC 1", "SMC 2", "Fib 3","EC 3", "Endocardiac Cells", "Neuronal Cells", "Doublet", "Lymphatic ECs", 'CM 3', 'Immune Cells', "Fibs 4", "Proliferating Cells")
+names(new.cluster.ids) <- levels(ChrSamples)
+ChrSamples <- RenameIdents(ChrSamples, new.cluster.ids)
+
+```
+
+```{r}
+VlnPlot(ChrSamples, features = c('Ptprc', 'Lyve1'), pt.size = 0, assay = 'RNA')
+```
+
+```{r}
+library(stringr)
+ChrSamples$condition <- paste(Idents(ChrSamples), ChrSamples@meta.data$orig.ident, sep = "_")
+Idents(ChrSamples) <- "condition"
+```
+
+```{r}
+
+
+
+my_cols <- c('Fibs 1'='blue4','Fibs 2'='blue4','Fib 3'='blue4', 'Fibs 4' ='blue4', 'EC 1'='darkorchid4','EC 2'='darkorchid4','EC 3'='darkorchid4', 'EC 4'='darkorchid4',  'EC 5'='darkorchid4','Immune Cells'='darkolivegreen','IC 2'='darkolivegreen','CM 1'='firebrick4','CM 2'='firebrick4','CM 3'='firebrick4', 'CM 4'='firebrick4','Neuronal Cells' = 'gray22', 'SMC 1' = 'goldenrod2', 'SMC 2' = 'goldenrod2',  'Endocardiac Cells' = 'lightsalmon', 'Doublet' = 'white',
+  'Lymphatic ECs' =  'turquoise4')
+tiff('ChronicUMAP.tiff', width = 3000, height = 1500,res = 300)
+DimPlot(ChrSamples, cols = my_cols,reduction = "umap",  dims = c(1,2), label = FALSE, label.size = 4, split.by = 'orig.ident') + plot_annotation('Integrated Chronic Day 7 UMAP') + ggplot2::theme(legend.position = "none")
+dev.off()
+```
+
+```{r}
+for (x in 0:levels(ChrSamples@meta.data$seurat_clusters))
+  popresp[x] <- FindMarkers(ChrSamples,  ident.1 = str_glue('"{x}_Subacute_Subacute"'), ident.2 = str_glue('"{x}_Chronic"_Chronic'), min.diff.pct = 0.25)
+```
+```{r}
+IC1resp <- FindMarkers(ChrSamples,  ident.1 = "1_Subacute_Subacute", ident.2 = "1_Chronic_Chronic", min.diff.pct = 0.25)
+IC1resp
+```
+
+```{r}
+DefaultAssay(ChrSamples) <- "integrated"
+ICs <- subset(ChrSamples, idents = c('Immune Cells'))#
+ICs <- FindVariableFeatures(ICs, selection.method = "vst", nfeatures = 4000) #FindVariableGenes
+
+all.genes <- rownames(ICs)
+ICs <- ScaleData(ICs, features = all.genes)
+
+#Dimensional Reduction
+
+ICs <- RunPCA(ICs, features = VariableFeatures(object = ICs))
+#ICs <- subset(ChrSamples, idents = c('IC 1_Matrix', 'IC 2_Matrix', 'IC 3_Matrix', 'IC 4_Matrix', 'IC 5_Matrix', 'IC 1_Saline', 'IC 2_Saline', 'IC 3_Saline', 'IC 4_Saline', 'IC 5_Saline'))
+ICs <- RunUMAP(ICs, dims = 1:40)
+DimPlot(ICs, reduction = "umap", dims = c(1,2))
+DimPlot(ICs, reduction = "umap", dims = c(1,2), group.by = 'orig.ident', split.by = 'orig.ident')
+ICs <- FindNeighbors(ICs, dims = 1:40)
+ICs <- FindClusters(ICs, resolution = 1) 
+ICs <- RunUMAP(ICs, dims = 1:40)
+DimPlot(ICs, reduction = "umap", dims = c(1,2), split.by = 'orig.ident') 
+VlnPlot(ICs, features = c('Cd163', 'Cd86', 'Mrc1'), assay = 'RNA', split.by = 'orig.ident')
+
+ICs.markers <- FindAllMarkers(ICs, only.pos = TRUE, min.diff.pct = 0.25, logfc.threshold = 0.25)
+ICs.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC) -> top10C7IC
+```
+```{r}
+DefaultAssay(ChrSamples) <- "integrated"
+ECs <- subset(ChrSamples, idents = c('EC 1', 'EC 2', 'EC 3'))#
+#ECs <- subset(ChrSamples, idents = c('EC 1_Matrix', 'EC 2_Matrix', 'EC 3_Matrix', 'EC 4_Matrix', 'EC 5_Matrix', 'EC 1_Saline', 'EC 2_Saline', 'EC 3_Saline', 'EC 4_Saline', 'EC 5_Saline'))
+ECs <- FindVariableFeatures(ECs, selection.method = "vst", nfeatures = 4000) #FindVariableGenes
+
+all.genes <- rownames(ECs)
+ECs <- ScaleData(ECs, features = all.genes)
+
+#Dimensional Reduction
+
+ECs <- RunPCA(ECs, features = VariableFeatures(object = ECs))
+
+
+ECs <- RunUMAP(ECs, dims = 1:40)
+DimPlot(ECs, reduction = "umap", dims = c(1,2))
+DimPlot(ECs, reduction = "umap", dims = c(1,2), split.by = 'orig.ident')
+ECs <- FindNeighbors(ECs, dims = 1:40)
+ECs <- FindClusters(ECs, resolution = 3) 
+ECs <- RunUMAP(ECs, dims = 1:40)
+tiff('ChronicECUMAP.tiff', width = 3000, height = 1500,res = 300)
+DimPlot(ECs, reduction = "umap", dims = c(1,2), split.by = 'orig.ident', cols = c('1' = '#ee220c', '4' = '#00AB8E'))
+dev.off()
+VlnPlot(ECs, features = c('Cd163', 'Cd86', 'Mrc1'), assay = 'RNA', split.by = 'orig.ident')
+
+
+
+ECs$condition <- paste(Idents(ECs), ECs@meta.data$orig.ident, sep = "_")
+Idents(ECs) <- "condition"
+
+
+ECs.markers <- FindMarkers(ECs,ident.1 = c('1'), ident.2 = '4', min.diff.pct = 0.25, logfc.threshold = 0.25)
+
+
+ECs.markers2 <- FindMarkers(ECs,ident.1 = c('1'), min.diff.pct = 0.25, logfc.threshold = 0.25)
+ECs.markers %>%
+    arrange(-avg_log2FC) ->josh
+    top_n(n = 10, wt = avg_log2FC) -> top10C7EC
+
+write.csv(ECs.markers, 'ChrECDownsampleFINAL.csv')
+
+DoHeatmap(ECs, features = top10C7EC$gene)
+```
+```{r}
+DefaultAssay(ChrSamples) <- "integrated"
+Fibss <- subset(ChrSamples, idents = c('Fibs 1', 'Fibs 2', 'Fib 3', 'Fibs 4'))#
+
+Fibss <- FindVariableFeatures(Fibss, selection.method = "vst", nfeatures = 4000) #FindVariableGenes
+
+all.genes <- rownames(Fibss)
+Fibss <- ScaleData(Fibss, features = all.genes)
+
+#Dimensional Reduction
+
+Fibss <- RunPCA(Fibss, features = VariableFeatures(object = Fibss))
+
+
+Fibss <- RunUMAP(Fibss, dims = 1:40)
+DimPlot(Fibss, reduction = "umap", dims = c(1,2))
+DimPlot(Fibss, reduction = "umap", dims = c(1,2),  split.by = 'orig.ident')
+Fibss <- FindNeighbors(Fibss, dims = 1:40)
+Fibss <- FindClusters(Fibss, resolution = 1.5) 
+Fibss <- RunUMAP(Fibss, dims = 1:40)
+tiff('ChronicFibsUMAP.tiff', width = 3000, height = 1500,res = 300)
+DimPlot(Fibss, reduction = "umap", dims = c(1,2), split.by = 'orig.ident', cols = c('1' = '#ee220c', '4' = '#00AB8E')) 
+dev.off()
+VlnPlot(Fibss, features = c('Cd163', 'Cd86', 'Mrc1'), assay = 'RNA', split.by = 'orig.ident')
+
+Fibss$condition <- paste(Idents(Fibss), Fibss@meta.data$orig.ident, sep = "_")
+Idents(Fibss) <- "condition"
+
+
+Fibss.markers <- FindMarkers(Fibss,ident.1 = c('1'), ident.2 = '4',  min.diff.pct = 0.25, logfc.threshold = 0.25)
+Fibss.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 5, wt = avg_log2FC) -> top10C7Fibs
+
+write.csv(Fibss.markers, 'ChrFibsdownsampleFinal.csv')
+
+DoHeatmap(Fibss, features = top10C7Fibs$gene)
+```
+
+```{r}
+DefaultAssay(ChrSamples) <- "integrated"
+SMCs <- subset(ChrSamples, idents = c('SMC 1', 'SMC 2'))#
+SMCs <- FindVariableFeatures(SMCs, selection.method = "vst", nfeatures = 4000) #FindVariableGenes
+
+all.genes <- rownames(SMCs)
+SMCs <- ScaleData(SMCs, features = all.genes)
+
+#Dimensional Reduction
+
+SMCs <- RunPCA(SMCs, features = VariableFeatures(object = SMCs))
+#SMCs <- subset(ChrSamples, idents = c('IC 1_Matrix', 'IC 2_Matrix', 'IC 3_Matrix', 'IC 4_Matrix', 'IC 5_Matrix', 'IC 1_Saline', 'IC 2_Saline', 'IC 3_Saline', 'IC 4_Saline', 'IC 5_Saline'))
+SMCs <- RunUMAP(SMCs, dims = 1:40)
+DimPlot(SMCs, reduction = "umap", dims = c(1,2))
+DimPlot(SMCs, reduction = "umap", dims = c(1,2), group.by = 'orig.ident', split.by = 'orig.ident')
+SMCs <- FindNeighbors(SMCs, dims = 1:40)
+SMCs <- FindClusters(SMCs, resolution = 1) 
+SMCs <- RunUMAP(SMCs, dims = 1:40)
+DimPlot(SMCs, reduction = "umap", dims = c(1,2), split.by = 'orig.ident') 
+VlnPlot(SMCs, features = c('Cd163', 'Cd86', 'Mrc1'), assay = 'RNA', split.by = 'orig.ident')
+
+SMCs$condition <- paste(Idents(SMCs), SMCs@meta.data$orig.ident, sep = "_")
+Idents(SMCs) <- "condition"
+
+
+tiff('ChronicSMCUMAP.tiff', width = 3000, height = 1500,res = 300)
+DimPlot(SMCs, reduction = "umap", dims = c(1,2), split.by = 'orig.ident', cols = c('SMC 1_ChronicMatrix' = '#ee220c', 'SMC 2_ChronicMatrix' = '#ee220c', 'SMC 1_ChronicSaline' = '#00AB8E', 'SMC 2_ChronicSaline' = '#00AB8E')) 
+dev.off()
+
+SMCs.markers <- FindMarkers(SMCs, ident.1 = c('SMC 1_ChronicMatrix', 'SMC 2_ChronicMatrix'), min.diff.pct = 0.25, logfc.threshold = 0.25)
+SMCs.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 10, wt = avg_log2FC) -> top10C7SMC
+
+write.csv(SMCs.markers, 'SMCChronicMvS.csv')
+```
+
+```{r}
+DefaultAssay(ChrSamples) <- "integrated"
+CMs <- subset(ChrSamples, idents = c('CM 1', 'CM 2', 'CM 3'))#
+#CMs <- subset(ChrSamples, idents = c('CM 1_Matrix', 'CM 2_Matrix', 'CM 3_Matrix', 'CM 4_Matrix', 'CM 5_Matrix', 'CM 1_Saline', 'CM 2_Saline', 'CM 3_Saline', 'CM 4_Saline', 'CM 5_Saline'))
+
+CMs <- FindVariableFeatures(CMs, selection.method = "vst", nfeatures = 4000) #FindVariableGenes
+
+all.genes <- rownames(CMs)
+CMs <- ScaleData(CMs, features = all.genes)
+
+#Dimensional Reduction
+
+CMs <- RunPCA(CMs, features = VariableFeatures(object = CMs))
+CMs <- RunUMAP(CMs, dims = 1:40)
+DimPlot(CMs, reduction = "umap", dims = c(1,2), split.by = 'orig.ident')
+CMs <- RunUMAP(CMs, dims = 1:40)
+DimPlot(CMs, reduction = "umap", dims = c(1,2))
+DimPlot(CMs, reduction = "umap", dims = c(1,2), group.by = 'orig.ident', split.by = 'orig.ident')
+CMs <- FindNeighbors(CMs, dims = 1:40)
+CMs <- FindClusters(CMs, resolution = 1.5) 
+CMs <- RunUMAP(CMs, dims = 1:40)
+tiff('ChronicCMUMAP.tiff', width = 3000, height = 1500,res = 300)
+DimPlot(CMs, reduction = "umap", dims = c(1,2), split.by = 'orig.ident', cols = c('7' = '#ee220c', '0' = '#00AB8E', '6' = '#00AB8E')) 
+dev.off()
+
+VlnPlot(ChrSamples, features = c('Wt1', 'Msln', 'Bnc1'), assay = 'RNA', split.by = 'orig.ident')
+
+CMs$condition <- paste(Idents(CMs), CMs@meta.data$orig.ident, sep = "_")
+Idents(CMs) <- "condition"
+
+
+CMs.markers <- FindMarkers(CMs, ident.1 = c('7'), ident.2 = c('0', '6'), min.diff.pct = 0.25, logfc.threshold = 0.25)
+CMs.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 5, wt = avg_log2FC) -> top10C7CM
+
+
+write.csv(CMs.markers, 'ChrCMsdownsampleFinal.csv') 
+DoHeatmap(CMs, features = top10C7CM$gene)
+```
+
+```{r}
+DefaultAssay(ChrSamples) <- "integrated"
+NC7 <- subset(ChrSamples, idents = c('Neuronal Cells'))#
+#NC7 <- subset(ChrSamples, idents = c('CM 1_Matrix', 'CM 2_Matrix', 'CM 3_Matrix', 'CM 4_Matrix', 'CM 5_Matrix', 'CM 1_Saline', 'CM 2_Saline', 'CM 3_Saline', 'CM 4_Saline', 'CM 5_Saline'))
+
+NC7 <- FindVariableFeatures(NC7, selection.method = "vst", nfeatures = 4000) #FindVariableGenes
+
+all.genes <- rownames(NC7)
+NC7 <- ScaleData(NC7, features = all.genes)
+
+#Dimensional Reduction
+
+NC7 <- RunPCA(NC7, features = VariableFeatures(object = NC7))
+NC7 <- RunUMAP(NC7, dims = 1:40)
+DimPlot(NC7, reduction = "umap", dims = c(1,2), split.by = 'orig.ident')
+NC7 <- RunUMAP(NC7, dims = 1:40)
+DimPlot(NC7, reduction = "umap", dims = c(1,2))
+DimPlot(NC7, reduction = "umap", dims = c(1,2), group.by = 'orig.ident', split.by = 'orig.ident')
+NC7 <- FindNeighbors(NC7, dims = 1:40)
+NC7 <- FindClusters(NC7, resolution = 1) 
+NC7 <- RunUMAP(NC7, dims = 1:40)
+DimPlot(NC7, reduction = "umap", dims = c(1,2), split.by = 'orig.ident') 
+VlnPlot(ChrSamples, features = c('Wt1', 'Msln', 'Bnc1'), assay = 'RNA', split.by = 'orig.ident')
+
+NC7$condition <- paste(Idents(NC7), NC7@meta.data$orig.ident, sep = "_")
+Idents(NC7) <- "condition"
+
+
+tiff('ChronicNeuronalUMAP.tiff', width = 3000, height = 1500,res = 300)
+DimPlot(NC7, reduction = "umap", dims = c(1,2), split.by = 'orig.ident', cols = c('Neuronal Cells_ChronicMatrix' = '#ee220c', 'Neuronal Cells_ChronicMatrix' = '#ee220c', 'Neuronal Cells_ChronicSaline' = '#00AB8E', 'Neuronal Cells_ChronicSaline' = '#00AB8E')) 
+dev.off()
+
+NC7.markers <- FindMarkers(NC7, ident.1 = c('Neuronal Cells_ChronicMatrix'), ident.2 = c('Neuronal Cells_ChronicSaline'), min.diff.pct = 0.25, logfc.threshold = 0.25)
+NC7.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 5, wt = avg_log2FC) -> top10CD7N
+
+NC7.markers <- read.csv('NCChronicMvS.csv')
+
+
+
+DoHeatmap(NC7, features = top10CD7N$gene)
+```
+```{r}
+DefaultAssay(ChrSamples) <- "integrated"
+NC7 <- subset(ChrSamples, idents = c('Lymphatic ECs'))#
+#NC7 <- subset(ChrSamples, idents = c('CM 1_Matrix', 'CM 2_Matrix', 'CM 3_Matrix', 'CM 4_Matrix', 'CM 5_Matrix', 'CM 1_Saline', 'CM 2_Saline', 'CM 3_Saline', 'CM 4_Saline', 'CM 5_Saline'))
+
+NC7 <- FindVariableFeatures(NC7, selection.method = "vst", nfeatures = 4000) #FindVariableGenes
+
+all.genes <- rownames(NC7)
+NC7 <- ScaleData(NC7, features = all.genes)
+
+#Dimensional Reduction
+
+NC7 <- RunPCA(NC7, features = VariableFeatures(object = NC7))
+NC7 <- RunUMAP(NC7, dims = 1:40)
+DimPlot(NC7, reduction = "umap", dims = c(1,2), split.by = 'orig.ident')
+NC7 <- RunUMAP(NC7, dims = 1:40)
+DimPlot(NC7, reduction = "umap", dims = c(1,2))
+DimPlot(NC7, reduction = "umap", dims = c(1,2), group.by = 'orig.ident', split.by = 'orig.ident')
+NC7 <- FindNeighbors(NC7, dims = 1:40)
+NC7 <- FindClusters(NC7, resolution = 1) 
+NC7 <- RunUMAP(NC7, dims = 1:40)
+DimPlot(NC7, reduction = "umap", dims = c(1,2), split.by = 'orig.ident') 
+VlnPlot(ChrSamples, features = c('Wt1', 'Msln', 'Bnc1'), assay = 'RNA', split.by = 'orig.ident')
+
+NC7$condition <- paste(Idents(NC7), NC7@meta.data$orig.ident, sep = "_")
+Idents(NC7) <- "condition"
+
+
+tiff('ChronicLymphaticECUMAP.tiff', width = 3000, height = 1500,res = 300)
+DimPlot(NC7, reduction = "umap", dims = c(1,2), split.by = 'orig.ident', cols = c('Lymphatic ECs_ChronicMatrix' = '#ee220c', 'Lymphatic ECs_ChronicMatrix' = '#ee220c', 'Lymphatic ECs_ChronicSaline' = '#00AB8E', 'Lymphatic ECs_ChronicSaline' = '#00AB8E')) 
+dev.off()
+
+NC7.markers <- FindMarkers(NC7, ident.1 = c('Lymphatic ECs_ChronicMatrix'), ident.2 = c('Lymphatic ECs_ChronicSaline'), min.diff.pct = 0.25, logfc.threshold = 0.25)
+NC7.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 5, wt = avg_log2FC) -> top10CD7N
+
+
+```
+
+
+
+
+```{r}
+DefaultAssay(ChrSamples) <- "integrated"
+CMs <- subset(ChrSamples, idents = c('CM 1', 'CM 2', 'CM 3'))#
+CMs$condition <- paste(Idents(CMs), CMs@meta.data$orig.ident, sep = "_")
+Idents(CMs) <- "condition"
+CM1respC7 <- FindMarkers(CMs, ident.1 = c("0_ChronicMatrix","1_ChronicMatrix","2_ChronicMatrix"), min.diff.pct = 0.25, logfc.threshold = 0.25)
+CM2respC7 <- FindMarkers(CMs, ident.1 = "CM 2_ChronicMatrix", ident.2 = "CM 2_ChronicSaline", min.diff.pct = 0.25, logfc.threshold = 0.25)
+CM3respC7 <- FindMarkers(CMs, ident.1 = "CM 3_ChronicMatrix", ident.2 = "CM 3_ChronicSaline", min.diff.pct = 0.25, logfc.threshold = 0.25)
+
+
+AllCMs <- FindMarkers(ChrSamples, ident.1 = c("CM 1_ChronicMatrix","CM 2_ChronicMatrix","CM 3_ChronicMatrix"), ident.2 = c("CM 1_ChronicSaline", "CM 2_ChronicSaline", "CM 3_ChronicSaline"), min.diff.pct = 0.25, logfc.threshold = 0.25)
+
+```
+
+```{r}
+
+DefaultAssay(ChrSamples) <- "integrated"
+ICs <- subset(ChrSamples, idents = c('IC 1', 'IC 2'))#
+ICs$condition <- paste(Idents(ICs), ICs@meta.data$orig.ident, sep = "_")
+Idents(ICs) <- "condition"
+IC1respC7 <- FindMarkers(ICs, ident.1 = "IC 1_ChronicMatrix", ident.2 = "IC 1_ChronicSaline", min.diff.pct = 0.25, logfc.threshold = 0.25)
+IC2respC7 <- FindMarkers(ICs, ident.1 = "IC 2_ChronicMatrix", ihttps://www.youtube.com/watch?v=lsir5YqqGL8dent.2 = "IC 2_ChronicSaline", min.diff.pct = 0.25, logfc.threshold = 0.25)
+AllICs  <- FindMarkers(ChrSamples, ident.1 = c("IC 1_ChronicMatrix", "IC 2_ChronicMatrix"), ident.2 = c("IC 1_ChronicSaline", "IC 2_ChronicSaline"), min.diff.pct = 0.25, logfc.threshold = 0.25)
+
+AllICs
+
+```
+
+```{r}
+DefaultAssay(ChrSamples) <- "integrated"
+ECs <- subset(ChrSamples, idents = c('EC 1', 'EC 2', 'EC 3', 'EC 4'))#
+ECs$condition <- paste(Idents(ECs), ECs@meta.data$orig.ident, sep = "_")
+Idents(ECs) <- "condition"
+EC1respC7 <- FindMarkers(ECs, ident.1 = "EC 1_ChronicMatrix", ident.2 = "EC 1_ChronicSaline", min.diff.pct = 0.25, logfc.threshold = 0.25)
+EC2respC7 <- FindMarkers(ECs, ident.1 = "EC 2_ChronicMatrix", ident.2 = "EC 2_ChronicSaline", min.diff.pct = 0.25, logfc.threshold = 0.25)
+EC3respC7 <- FindMarkers(ECs, ident.1 = "EC 3_ChronicMatrix", ident.2 = "EC 3_ChronicSaline", min.diff.pct = 0.25, logfc.threshold = 0.25)
+EC4respC7 <- FindMarkers(ECs, ident.1 = "EC 4_ChronicMatrix", ident.2 = "EC 4_ChronicSaline", min.diff.pct = 0.25, logfc.threshold = 0.25)
+
+LymphECsrespC7 <- FindMarkers(ChrSamples, ident.1 = "Lymphatic ECs_ChronicMatrix", ident.2 = "Lymphatic ECs_ChronicSaline", min.diff.pct = 0.25, logfc.threshold = 0.25)
+
+EndoECsrespC7 <- FindMarkers(ChrSamples, ident.1 = "Endocardiac ECs_ChronicMatrix", ident.2 = "Endocardiac ECs_ChronicSaline", min.diff.pct = 0.25, logfc.threshold = 0.25)
+
+allECs <- FindMarkers(ChrSamples, ident.1 = c("EC 1_ChronicMatrix", "EC 2_ChronicMatrix", "EC 3_ChronicMatrix", "EC 4_ChronicMatrix"), ident.2 = c("EC 1_ChronicSaline", "EC 2_ChronicSaline", "EC 3_ChronicSaline", "EC 4_ChronicSaline"), min.diff.pct = 0.25, logfc.threshold = 0.25)
+
+
+NeuroC7 <- FindMarkers(ChrSamples, ident.1 = "Neuronal Cells_ChronicMatrix", ident.2 = "Neuronal Cells_ChronicSaline", min.diff.pct = 0.25, logfc.threshold = 0.25)
+```
+
+```{r}
+DefaultAssay(ChrSamples) <- "integrated"
+SMCs <- subset(ChrSamples, idents = c('SMC 1', 'SMC 2'))#
+
+
+SMCs$condition <- paste(Idents(SMCs), SMCs@meta.data$orig.ident, sep = "_")
+Idents(SMCs) <- "condition"
+SMC1respC7 <- FindMarkers(SMCs, ident.1 = "SMC 1_ChronicMatrix", ident.2 = "SMC 1_ChronicSaline", min.diff.pct = 0.25, logfc.threshold = 0.25)
+SMC2respC7 <- FindMarkers(SMCs, ident.1 = "SMC 2_ChronicMatrix", ident.2 = "SMC 2_ChronicSaline", min.diff.pct = 0.25, logfc.threshold = 0.25)
+
+allSMCs <- FindMarkers(ChrSamples, ident.1 = c("SMC 1_ChronicMatrix", "SMC 2_ChronicMatrix"), ident.2 = c("SMC 1_ChronicSaline", "SMC 2_ChronicSaline"), min.diff.pct = 0.25, logfc.threshold = 0.25)
+```
+```{r}
+DefaultAssay(ChrSamples) <- "integrated"
+Fibs <- subset(ChrSamples, idents = c('Fibs 1', 'Fibs 2', 'Fibs 3'))#
+Fibs$condition <- paste(Idents(Fibs), Fibs@meta.data$orig.ident, sep = "_")
+Idents(Fibs) <- "condition"
+Fib1respC7 <- FindMarkers(Fibs, ident.1 = "Fibs 1_ChronicMatrix", ident.2 = "Fibs 1_ChronicSaline", min.diff.pct = 0.25, logfc.threshold = 0.25)
+Fib2respC7 <- FindMarkers(Fibs, ident.1 = "Fibs 2_ChronicMatrix", ident.2 = "Fibs 2_ChronicSaline", min.diff.pct = 0.25, logfc.threshold = 0.25)
+Fib3respC7 <- FindMarkers(Fibs, ident.1 = "Fibs 3_ChronicSaline", ident.2 = "Fibs 3_ChronicMatrix", min.diff.pct = 0.25, logfc.threshold = 0.25)
+
+
+allFibs <- FindMarkers(ChrSamples, ident.1 = c("Fibs 1_ChronicMatrix","Fibs 2_ChronicMatrix", "Fibs 3_ChronicMatrix"),ident.2 = c("Fibs 1_ChronicSaline","Fibs 2_ChronicSaline", "Fibs 3_ChronicSaline"), min.diff.pct = 0.25, logfc.threshold = 0.25)
+
+allFibs
+```
+
+
+```{r}
+
+
+SMCs.markers <- read.csv('/Users/joshmesfin/Documents/MATLAB/Day7VisiumMatrixZones.csv')
+tiff('SubacuteVisium.tiff', width = 3000, height = 2000,res = 300)
+EnhancedVolcano(SMCs.markers,
+    lab = rownames(SMCs.markers),
+    x = 'avg_log2FC',
+    y = 'p_val_adj',
+    FCcutoff = 0.25,
+    pointSize = 3.0,
+    pCutoff = 0.05,
+    gridlines.major = FALSE,
+    gridlines.minor = FALSE,
+    selectLab = c(''),
+    xlim = c(-2, 2),
+    title = '')
+dev.off()
+
+Fibss.markers <- read.csv('/Users/joshmesfin/Documents/MATLAB/FibsD3MvS.csv')
+tiff('AcuteFibsVolcanoPlot.tiff', width = 3000, height = 1500,res = 300)
+EnhancedVolcano(Fibss.markers,
+    lab = rownames(Fibss.markers),
+    x = 'avg_log2FC',
+    y = 'p_val_adj',
+    FCcutoff = 0.25,
+    pointSize = 3.0,
+    pCutoff = 0.05,
+     gridlines.major = FALSE,
+    gridlines.minor = FALSE,
+    xlim = c(-1.25, 1),
+    selectLab = c(''),
+    title = 'Acute Matrix vs. Saline Fibs')
+dev.off()
+
+
+CMs.markers <- read.csv('/Users/joshmesfin/Documents/MATLAB/CMD3MvSFINAL.csv')
+tiff('AcuteCMVolcanoPlot.tiff', width = 3000, height = 1500,res = 300)
+EnhancedVolcano(CMs.markers,
+    lab = rownames(CMs.markers),
+    x = 'avg_log2FC',
+    y = 'p_val_adj',
+    FCcutoff = 0.25,
+    pointSize = 3.0,
+    pCutoff = 0.05,
+    gridlines.major = FALSE,
+    gridlines.minor = FALSE,
+    selectLab = c(''),
+    title = 'Acute Matrix vs. Saline CMs')
+dev.off()
+
+Macs.markers <- read.csv('/Users/joshmesfin/Documents/MATLAB/MacrophageD7MvS.csv')
+tiff('AcuteVolcanoPlot.tiff', width = 3000, height = 1500,res = 300)
+EnhancedVolcano(Macs.markers,
+    lab = rownames(Macs.markers),
+    x = 'avg_log2FC',
+    y = 'p_val_adj',
+    FCcutoff = 0.25,
+    pointSize = 3.0,
+    pCutoff = 0.05,
+    gridlines.major = FALSE,
+    gridlines.minor = FALSE,
+    selectLab = c(''),
+    title = 'Acute Matrix vs. Saline Macs')
+dev.off()
+
+Tcell.markers <- read.csv('/Users/joshmesfin/Documents/MATLAB/TcellD3.csv')
+tiff('AcuteTcellVolcanoPlot.tiff', width = 3000, height = 1500,res = 300)
+EnhancedVolcano(Tcell.markers,
+    lab = rownames(Tcell.markers),
+    x = 'avg_log2FC',
+    y = 'p_val_adj',
+    FCcutoff = 0.25,
+    pointSize = 3.0,
+    pCutoff = 0.05,
+    gridlines.major = FALSE,
+    gridlines.minor = FALSE,
+    selectLab = c(''),
+    title = 'Acute Matrix vs. Saline Tcell') 
+dev.off()
+
+NC.markers <- read.csv('/Users/joshmesfin/Documents/MATLAB/NCD3Cluster2v1.csv')
+tiff('ChronicNCVolcanoPlot.tiff', width = 3000, height = 1500,res = 300)
+EnhancedVolcano(NC7.markers,
+    lab = rownames(NC7.markers),
+    x = 'avg_log2FC',
+    y = 'p_val_adj',
+    FCcutoff = 0.25,
+    pointSize = 3.0,
+    pCutoff = 0.05,
+    gridlines.major = FALSE,
+    gridlines.minor = FALSE,
+    selectLab = c(''),
+    title = 'Chronic Matrix vs. Saline NC')
+dev.off()
+
+LEC.markers <- read.csv('/Users/joshmesfin/Documents/MATLAB/LECChronicMvS.csv')
+tiff('LECChronicVolcanoPlot.tiff', width = 3000, height = 1500,res = 300)
+EnhancedVolcano(LEC.markers,
+    lab = rownames(LEC.markers),
+    x = 'avg_log2FC',
+    y = 'p_val_adj',
+    FCcutoff = 0.25,
+    pointSize = 3.0,
+    pCutoff = 0.05,
+    gridlines.major = FALSE,
+    gridlines.minor = FALSE,
+    xlim = c(-1, 1),   
+    selectLab = c(''),
+    title = 'Chronic Matrix vs. Saline LEC')
+dev.off()
+
+```
+```{r}
+integrated.sub <- subset(as.Seurat(cds, assay = NULL), monocle3_partitions == 4)
+cds <- as.cell_data_set(integrated.sub)
+cds <- learn_graph(cds)
+plot_cells(cds, label_groups_by_cluster = FALSE, label_leaves = FALSE, label_branch_points = FALSE)
+
+
+Day7@meta.data$cell_type <- Day7@active.ident
+scdiffcom_object <- run_interaction_analysis(
+  seurat_object = Day7,
+  LRI_species = "rat",
+  seurat_celltype_id = "cell_type",
+  seurat_condition_id = list(
+    column_name = "orig.ident",
+    cond1_name = "Matrix",
+    cond2_name = "Saline"
+  )
+)
+
+
+tiff("Top20DownSubacute.tiff",  width = 2000, height = 2000,res = 300)
+PlotORA(
+  object = scdiffcom_object,
+  category = "LRI",
+  regulation = "DOWN"
+) + theme(
+  legend.position = c(0.85, 0.4),
+  legend.key.size = unit(0.4, "cm")
+)
+dev.off()
+```
+
+

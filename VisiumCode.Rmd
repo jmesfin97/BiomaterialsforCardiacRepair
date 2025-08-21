@@ -1,0 +1,246 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+library(Seurat)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+library(hdf5r)
+
+```
+
+
+
+
+```{r}
+V1 <- Load10X_Spatial(data.dir = "/Users/joshmesfin/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/5_4")
+V2 <- Load10X_Spatial(data.dir = "/Users/joshmesfin/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/Day7MatrixR2")
+
+toex <- c('Hb-','^Rpl', '^Mt-', '^Rps', 'Hbb-', 'Hba-')
+
+
+V11 <- Load10X_Spatial(data.dir = "/Users/joshmesfin/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/4_1")
+V12 <- Load10X_Spatial(data.dir = "/Users/joshmesfin/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/Day7SalineVisium2")
+V1.index <- grep(paste(toex,collapse = '|'),x = rownames(V1),value = F)
+V1<- V1[-V1.index, ]
+V2.index <- grep(paste(toex,collapse = '|'),x = rownames(V2),value = F)
+V2<- V2[-V2.index, ]
+V11.index <- grep(paste(toex,collapse = '|'),x = rownames(V11),value = F)
+V11<- V11[-V11.index, ]
+V12.index <- grep(paste(toex,collapse = '|'),x = rownames(V12),value = F)
+V12<- V12[-V12.index, ]
+
+
+V1$condition <- "Subacute"
+V2$condition <- "Subacute"
+V11$condition <- "Saline"
+V12$condition <- "Saline"
+
+V5_6<- c(V1, V2, V11, V12)
+class(V5_6)
+V5_6
+
+for (i in 1:length(V5_6)) {
+  V5_6[[i]] <- NormalizeData(V5_6[[i]], verbose = FALSE)
+  V5_6[[i]] <- FindVariableFeatures(V5_6[[i]], selection.method = "vst",
+                                                                nfeatures = 2000, verbose = FALSE)}
+V5_6.anchors <- FindIntegrationAnchors(object.list = V5_6,reduction = "cca",
+                                                                   dims = 1:50)
+#indicate a reference if you want to anchor to one object, default is to do this in shared space
+v5_6.integrated<- IntegrateData(anchorset = V5_6.anchors, dims = 1:30)
+
+DefaultAssay(v5_6.integrated) <- "integrated"
+
+
+# Run the standard workflow for visualization and clustering
+v5_6.integrated<- ScaleData(v5_6.integrated, verbose = FALSE)
+v5_6.integrated<- RunPCA(v5_6.integrated, npcs = 30, verbose = FALSE)
+
+v5_6.integrated<- FindNeighbors(v5_6.integrated, reduction = "pca", dims = 1:30)
+v5_6.integrated <- FindClusters(v5_6.integrated,resolution = 1, verbose = FALSE)
+v5_6.integrated <- RunUMAP(v5_6.integrated, reduction = "pca", dims = 1:30)
+
+p5 <- DimPlot(v5_6.integrated, reduction = "umap", label = TRUE, split.by= 'condition')
+p6 <- SpatialDimPlot(Day7Visium,label = TRUE, label.size = 3)
+p5 + p6
+
+Day7Visium <- v5_6.integrated
+
+SpatialFeaturePlot(v5_6.integrated, features =c("Myh6"))
+
+Day7Visium<- subset(v5_6.integrated, idents = c('11','5','6', '7','14'), invert = TRUE)
+
+Day7Visium$condition <- paste(Idents(Day7Visium), Day7Visium@meta.data$condition, sep = "_")
+Idents(Day7Visium) <- "condition"
+
+
+
+DefaultAssay(Day7Visium) <- "integrated"
+B1.markers <- FindMarkers(Day7Visium, ident.1 = c('0_ECM', '1_ECM', '2_ECM', '3_ECM', '4_ECM', '8_ECM', '9_ECM','10_ECM', '12_ECM', '13_ECM', '15_ECM', '16_ECM'), ident.2 = c('0_Saline', '1_Saline', '2_Saline', '3_Saline', '4_Saline', '8_Saline', '9_Saline','10_Saline', '12_Saline', '13_Saline', '15_Saline', '16_Saline'), min.diff.pct = 0.2, logfc.threshold = 0.25)
+B1.markers %>%
+    arrange(wt= avg_log2FC) -> top10
+    top_n(n = 10, wt = avg_log2FC) -> top10
+DoHeatmap(v5_6.integrated, features = top10$gene)
+write.csv(B1.markers, 'Day7VisiumRemoteZones.csv')
+
+
+ChronicMatrix.markers <- read.csv('/Users/joshmesfin/Documents/MATLAB/SubacutevChronicVisiumRemoteZones.csv')
+
+tiff('SubacutevsChronic_RemoteVolcanoPlot.tiff', width = 3000, height = 2000,res = 300)
+EnhancedVolcano(ChronicMatrix.markers,
+    lab = rownames(ChronicMatrix.markers),
+    x = 'avg_log2FC',
+    y = 'p_val_adj',
+    FCcutoff = 0.25,
+    pointSize = 3.0,
+    pCutoff = 0.05,
+    gridlines.major = FALSE,
+    xlim = c(-3, 3), 
+    gridlines.minor = FALSE,
+    selectLab = c(''))
+dev.off()
+
+
+
+
+
+```
+
+```{r}
+V5 <- Load10X_Spatial(data.dir = "/Users/joshmesfin/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/A1_useful_output")
+V6 <- Load10X_Spatial(data.dir = "/Users/joshmesfin/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/B1_useful_output")
+V13 <- Load10X_Spatial(data.dir = "/Users/joshmesfin/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/ChronicA_data")
+V14 <- Load10X_Spatial(data.dir = "/Users/joshmesfin/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/ChronicB_data")
+V15 <- Load10X_Spatial(data.dir = "/Users/joshmesfin/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/C1_useful_output")
+V16 <- Load10X_Spatial(data.dir = "/Users/joshmesfin/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/D1_useful_output")
+
+toex <- c('Hb-','^Rpl', '^Mt-', '^Rps', 'Hbb-', 'Hba-')
+
+
+
+V5.index <- grep(paste(toex,collapse = '|'),x = rownames(V5),value = F)
+V5<- V5[-V5.index, ]
+V6.index <- grep(paste(toex,collapse = '|'),x = rownames(V6),value = F)
+V6<- V6[-V6.index, ]
+V14.index <- grep(paste(toex,collapse = '|'),x = rownames(V14),value = F)
+V14<- V14[-V14.index, ] 
+V15.index <- grep(paste(toex,collapse = '|'),x = rownames(V15),value = F)
+V15<- V15[-V15.index, ]
+V16.index <- grep(paste(toex,collapse = '|'),x = rownames(V16),value = F)
+V16<- V16[-V16.index, ]
+
+V5 <- RenameCells(V5, add.cell.id = "Chronic")
+V6 <- RenameCells(V6, add.cell.id ="Chronic")
+V14 <- RenameCells(V14, add.cell.id = "Chronic")
+V15 <- RenameCells(V15, add.cell.id ="Saline")
+V16 <- RenameCells(V16, add.cell.id ="Saline")
+
+V5$condition <- "Chronic"
+V6$condition <- "Chronic"
+V14$condition <- "Chronic"
+V15$condition <- "Saline"
+V16$condition <- "Saline"
+
+
+V7_8<- c(V1, V2, V5, V6, V14)
+class(V7_8)
+V7_8
+
+for (i in 1:length(V7_8)) {
+  V7_8[[i]] <- NormalizeData(V7_8[[i]], verbose = FALSE)
+  V7_8[[i]] <- FindVariableFeatures(V7_8[[i]], selection.method = "vst",
+                                                                nfeatures = 2000, verbose = FALSE)}
+V7_8.anchors <- FindIntegrationAnchors(object.list = V7_8,reduction = "cca",
+                                                                   dims = 1:50)
+#indicate a reference if you want to anchor to one object, default is to do this in shared space
+ChronicMatrix<- IntegrateData(anchorset = V7_8.anchors, dims = 1:30)
+
+DefaultAssay(ChronicMatrix) <- "integrated"
+
+
+# Run the standard workflow for visualization and clustering
+ChronicMatrix<- ScaleData(ChronicMatrix, verbose = FALSE)
+ChronicMatrix<- RunPCA(ChronicMatrix, npcs = 30, verbose = FALSE)
+
+ChronicMatrix<- FindNeighbors(ChronicMatrix, reduction = "pca", dims = 1:30)
+ChronicMatrix <- FindClusters(ChronicMatrix,resolution = 1, verbose = FALSE)
+ChronicMatrix <- RunUMAP(ChronicMatrix, reduction = "pca", dims = 1:30)
+
+p5 <- DimPlot(ChronicMatrix, reduction = "umap", label = TRUE, split.by = 'condition')
+p6 <- SpatialDimPlot(ChronicMatrix, label.size = 3, label = T)
+p5 + p6
+
+SpatialDimPlot(ChronicMatrix, label.size = 3, label = F)
+
+
+ChronicM$condition <- paste(Idents(ChronicM), ChronicM@meta.data$condition, sep = "_")
+Idents(ChronicM) <- "condition"
+
+ChronicVisium <- read.csv('/Users/joshmesfin/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/Day7ChrVisium.csv')
+
+C1.markers <- FindAllMarkers(ChronicMatrix, only.pos = TRUE, min.diff.pct = 0.25, logfc.threshold = 0.25)
+C1.markers %>%
+    group_by(cluster) %>%
+    top_n(n = 20, wt = avg_log2FC) -> top10
+DoHeatmap(ChronicMatrix, features = top10$gene)
+p6
+
+ChronicMatrix <- RenameIdents(ChronicMatrix, '8' = 'Matrix Zone','9' = 'Matrix Zone', '4' = 'Matrix Free Zone')
+
+tiff("ChronicVisiumSpatialMap.tiff", width = 10000, height = 5000,res = 300)
+SpatialDimPlot(ChronicMatrix, cols = my_cols, label.box = FALSE) + NoLegend()
+dev.off()
+
+ChronicM <- subset(ChronicMatrix, idents = c('3', '5', '6', '7', '8', '12'), invert=T)
+
+DefaultAssay(ChronicMatrix) <- "Spatial"
+ChronicMatrix.markers <- FindMarkers(ChronicM, ident.1 = c('0_Subacute', '1_Subacute', '2_Subacute', '4_Subacute', '9_Subacute', '10_Subacute', '11_Subacute', '13_Subacute', '14_Subacute', '15_Subacute'), ident.2 = c('0_Chronic', '1_Chronic', '2_Chronic', '4_Chronic', '9_Chronic', '10_Chronic', '11_Chronic', '13_Chronic', '14_Chronic', '15_Chronic'), min.diff.pct = 0.2, logfc.threshold = 0.25)
+
+ChronicMatrix.markers %>%
+    arrange(-avg_log2FC) -> hello2
+
+
+write.csv(ChronicMatrix.markers, 'SubacutevChronicVisiumRemoteZones.csv')
+
+write.csv('ChronicMatrixVisium.csv')
+ChronicMatrix.markers %>%
+    arrange(-avg_log2FC) -> hello2
+
+
+DefaultAssay(ChronicMatrix) <- "integrated"
+tiff("ChronicVisiumHeatmap.tiff", width = 2000, height = 1000,res = 300)
+hi <- DoHeatmap(ChronicMatrix, features = ChronicMatrix.markers$X, group.colors = my_cols) + NoLegend()
+dev.off()
+
+DefaultAssay(ChronicMatrix) <- "integrated"
+tiff("ChronicVisiumCoarseCluster.tiff", width = 5000, height = 2500,res = 300)
+SpatialDimPlot(ChronicMatrix, label = FALSE, pt.size.factor = 1.5) + NoLegend()
+dev.off()
+
+DefaultAssay(ChronicMatrix) <- "Spatial"
+tiff("ChronicVisiumCoarseCluster.tiff", width = 5000, height = 2500,res = 300)
+SpatialFeaturePlot(ChronicMatrix, feature = c('Myh6'), pt.size.factor = 1.5) + NoLegend()
+dev.off()
+
+
+DoHeatmap(ChronicMatrix, features = heatmap_values$Feature, cells = heatmap_values$Expression, group.colors = my_cols, label = FALSE)
+write.csv(heatmap_values, "/Users/vanninh/Desktop/heatmap_values.csv")
+
+
+#You need to: 
+#1) plot the do heatmap and save it to a variable 
+#2) pass the variable containing your plot into the function 
+#3) it returns a dataframe so save the output into another variable
+#Ex: myheatmap = DoHeatmap(data, features = top$gene)
+#my_data = extract_heatmap_data(myheatmap)
+
+write.csv(C1.markers, 'IntegratedCD7All.csv')
+```
+
