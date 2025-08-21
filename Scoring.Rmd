@@ -1,0 +1,64 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+Th1 <- unlist(strsplit(readLines("/Users/JoshM/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/ScoringFiles/Th1.txt"), "[[:space:]]+"))
+Th2 <- unlist(strsplit(readLines("/Users/JoshM/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/ScoringFiles/Th2.txt"), "[[:space:]]+"))
+M1 <- unlist(strsplit(readLines("/Users/JoshM/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/ScoringFiles/M1.txt"), "[[:space:]]+"))
+M2 <- unlist(strsplit(readLines("/Users/JoshM/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/ScoringFiles/M2.txt"), "[[:space:]]+"))
+invector <- Th1[Th1 %in% rownames(ChronicDay7Matrix.data@assays$Spatial@data)]
+invector2 <- Th2[Th2 %in% rownames(ChronicDay7Matrix.data@assays$Spatial@data)]
+invector3 <- M1[M1 %in% rownames(ChronicDay7Matrix.data@assays$Spatial@data)]
+invector4 <- M2[M2 %in% rownames(ChronicDay7Matrix.data@assays$Spatial@data)]
+
+
+x <- GetAssayData(ChronicDay7Matrix.data, assay = "Spatial", slot = "counts")[invector,]
+y <- GetAssayData(ChronicDay7Matrix.data, assay = "Spatial", slot = "counts")[invector2,]
+z <- GetAssayData(ChronicDay7Matrix.data, assay = "Spatial", slot = "counts")[invector3,]
+w <- GetAssayData(ChronicDay7Matrix.data, assay = "Spatial", slot = "counts")[invector4,]
+scores1 = Matrix::colSums(x)/(ChronicDay7Matrix.data@meta.data$nCount_Spatial)
+scores2 = Matrix::colSums(y)/(ChronicDay7Matrix.data@meta.data$nCount_Spatial)
+scores3 = Matrix::colSums(z)/(ChronicDay7Matrix.data@meta.data$nCount_Spatial)
+scores4 = Matrix::colSums(w)/(ChronicDay7Matrix.data@meta.data$nCount_Spatial)
+
+ChronicDay7Matrix.data <- AddMetaData(ChronicDay7Matrix.data,scores1, col.name = ("Th1_score"))
+ChronicDay7Matrix.data <- AddMetaData(ChronicDay7Matrix.data,scores2, col.name = ("Th2_score"))
+ChronicDay7Matrix.data <- AddMetaData(ChronicDay7Matrix.data,scores3, col.name = ("M1_score"))
+ChronicDay7Matrix.data <- AddMetaData(ChronicDay7Matrix.data,scores4, col.name = ("M2_score"))
+SpatialFeaturePlot(ChronicDay7Matrix.data, features =c("Th1_score", 'Th2_score', 'Treg_score', 'Th17_score'))
+```
+
+```{r}
+Apoptosis <- unlist(strsplit(readLines("/Users/JoshM/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/ScoringFiles/Apoptosis.txt"), "[[:space:]]+"))
+Proliferation <- unlist(strsplit(readLines("/Users/JoshM/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/ScoringFiles/Proliferation.txt"), "[[:space:]]+"))
+Neurogenesis <- unlist(strsplit(readLines("/Users/JoshM/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/ScoringFiles/Neurogenesis.txt"), "[[:space:]]+"))
+Angiogenesis <- unlist(strsplit(readLines("/Users/JoshM/Library/Mobile Documents/com~apple~CloudDocs/Documents/MATLAB/ScoringFiles/Angiogenesis.txt"), "[[:space:]]+"))
+invector <- Apoptosis[Apoptosis %in% rownames(ChronicDay7Matrix.data@assays$Spatial@data)]
+invector2 <- Proliferation[ Proliferation %in% rownames(ChronicDay7Matrix.data@assays$Spatial@data)]
+invector3 <- Neurogenesis[Neurogenesis %in% rownames(ChronicDay7Matrix.data@assays$Spatial@data)]
+invector4 <- Angiogenesis[Angiogenesis %in% rownames(ChronicDay7Matrix.data@assays$Spatial@data)]
+
+
+x <- GetAssayData(ChronicDay7Matrix.data, assay = "Spatial", slot = "counts")[invector,]
+y <- GetAssayData(ChronicDay7Matrix.data, assay = "Spatial", slot = "counts")[invector2,]
+z <- GetAssayData(ChronicDay7Matrix.data, assay = "Spatial", slot = "counts")[invector3,]
+w <- GetAssayData(ChronicDay7Matrix.data, assay = "Spatial", slot = "counts")[invector4,]
+scores1 = Matrix::colSums(x)/(ChronicDay7Matrix.data@meta.data$nCount_Spatial)
+scores2 = Matrix::colSums(y)/(ChronicDay7Matrix.data@meta.data$nCount_Spatial)
+scores3 = Matrix::colSums(z)/(ChronicDay7Matrix.data@meta.data$nCount_Spatial)
+scores4 = Matrix::colSums(w)/(ChronicDay7Matrix.data@meta.data$nCount_Spatial)
+
+ChronicDay7Matrix.data <- AddMetaData(ChronicDay7Matrix.data,scores1, col.name = ("Apoptosis_score"))
+ChronicDay7Matrix.data <- AddMetaData(ChronicDay7Matrix.data,scores2, col.name = ("Proliferation_score"))
+ChronicDay7Matrix.data <- AddMetaData(ChronicDay7Matrix.data,scores3, col.name = ("Neurogenesis_score"))
+ChronicDay7Matrix.data <- AddMetaData(ChronicDay7Matrix.data,scores4, col.name = ("Angiogenesis_score"))
+SpatialFeaturePlot(ChronicDay7Matrix.data, features =c("Apoptosis_score", 'Proliferation_score', 'Neurogenesis_score', 'Angiogenesis_score'))
+```
+
+
